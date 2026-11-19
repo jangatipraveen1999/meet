@@ -51,6 +51,7 @@ and this project adheres to
 - 🐛(frontend) promote the active speaker in the carousel layout
 - 🐛(backend) handle unreachable livekit when updating or closing rooms
 - 🥅(backend) acknowledge livekit webhooks of rooms the backend ignores
+- 🐛(frontend) bound the warm-up of the livekit connection
 
 ## [1.37.0] - 2026-11-01
 
