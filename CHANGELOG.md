@@ -47,6 +47,7 @@ and this project adheres to
 - 🐛(frontend) apply the sans font token on every page
 - 🐛(frontend) promote the active speaker in the carousel layout
 - 🐛(backend) handle unreachable livekit when updating or closing rooms
+- 🥅(backend) acknowledge livekit webhooks of rooms the backend ignores
 
 ## [1.37.0] - 2026-11-01
 
