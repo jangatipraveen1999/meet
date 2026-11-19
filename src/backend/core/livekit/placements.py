@@ -1,9 +1,10 @@
 """Placements of LiveKit rooms on the LiveKit clusters.
 
 A placement records the LiveKit cluster a LiveKit room lives on, from the first
-credentials handed out for it until the LiveKit room finishes. Only rooms whose
-lifecycle Django follows are placed: unregistered rooms never are, and live on
-the default cluster.
+credentials handed out for it, or the first time a cluster tells the LiveKit
+room started there, until the LiveKit room finishes. Only rooms whose lifecycle
+Django follows are placed: unregistered rooms never are, and live on the
+default cluster.
 """
 
 import contextlib
@@ -13,6 +14,8 @@ from uuid import uuid4
 
 from django.db.models import F
 from django.utils import timezone
+
+from livekit.protocol.models import Room as LiveKitRoom
 
 from core import audit, auditing
 from core.models import Placement, Room
@@ -234,6 +237,223 @@ class PlacementService:
                 placement.room_name,
                 cluster.name,
             )
+
+    @classmethod
+    def record_started(
+        cls,
+        cluster: LiveKitClusterConfig,
+        livekit_room: LiveKitRoom,
+        room: Room | None = None,
+    ) -> bool:
+        """Record a LiveKit room a LiveKit cluster tells started on it.
+
+        Return whether it is the LiveKit room its room is placed on, named after
+        the room given, if any:
+
+        - Without placement, it is placed on its cluster when that cluster may
+          receive new placements, with its SID. It is left alone when no
+          cluster may, and closed otherwise.
+        - Placed on a cluster this process does not know, it is left alone, and
+          so is its placement: processes may disagree on the clusters while
+          their registry changes.
+        - Placed on another cluster, it is closed, unless the placement read
+          again right before closing it says otherwise.
+        - Placed on its cluster, its SID is recorded when the placement has
+          none. A SID recorded is kept: joins create the LiveKit rooms of a
+          cluster, and record their SID themselves.
+
+        A LiveKit room closed is deleted from its cluster, which disconnects its
+        participants with the ROOM_DELETED reason. A LiveKit room told without
+        SID is taken for the one its room is placed on, and nothing recorded.
+
+        Raises:
+            LiveKitRoomCloseError: the cluster failed to close the LiveKit room.
+            PlacementChangedError: the placement kept changing meanwhile.
+        """
+        if not livekit_room.sid:
+            return True
+
+        placements = Placement.objects.filter(room_name=livekit_room.name)
+        for _attempt in range(PLACEMENT_CREATION_ATTEMPTS):
+            started = cls._record_start(cluster, livekit_room, room, placements.first())
+            if started is not None:
+                return started
+
+        logger.warning(
+            "Placement of LiveKit room %s kept changing while its LiveKit room "
+            "started on LiveKit cluster %s was recorded",
+            livekit_room.name,
+            cluster.name,
+        )
+        raise PlacementChangedError(
+            f"The placement of LiveKit room {livekit_room.name} kept changing."
+        )
+
+    @classmethod
+    def _record_start(
+        cls,
+        cluster: LiveKitClusterConfig,
+        livekit_room: LiveKitRoom,
+        room: Room | None,
+        placement: Placement | None,
+    ) -> bool | None:
+        """Record a LiveKit room started on a cluster, its placement as read.
+
+        Return whether it is the LiveKit room its room is placed on, or None
+        when the placement is to be read again.
+        """
+        if placement is None:
+            return cls._place_started(cluster, livekit_room, room)
+
+        registered = {known.name for known in get_livekit_clusters()}
+        if placement.cluster not in registered:
+            logger.warning(
+                "LiveKit room %s started on LiveKit cluster %s, but is placed on "
+                "LiveKit cluster %s, which is not registered: leaving both alone",
+                livekit_room.name,
+                cluster.name,
+                placement.cluster,
+            )
+            return False
+
+        if placement.cluster != cluster.name:
+            return cls._close_started_elsewhere(cluster, livekit_room, registered)
+
+        return cls._record_sid(cluster, livekit_room, placement)
+
+    @staticmethod
+    def _record_sid(
+        cluster: LiveKitClusterConfig,
+        livekit_room: LiveKitRoom,
+        placement: Placement,
+    ) -> bool | None:
+        """Record the SID of a LiveKit room started on its placement's cluster.
+
+        The SID is recorded when the placement has none. A SID recorded is
+        kept, whatever SID started: joins create the LiveKit rooms of a cluster
+        and record their SID themselves, and a webhook may be late.
+
+        Return True, as it is the LiveKit room its room is placed on, or None
+        when the placement changed since it was read, and is to be read again.
+        """
+        if placement.sid == livekit_room.sid:
+            return True
+
+        if placement.sid:
+            logger.info(
+                "LiveKit room %s started on LiveKit cluster %s with SID %s, while "
+                "placed there with SID %s: keeping its placement",
+                livekit_room.name,
+                cluster.name,
+                livekit_room.sid,
+                placement.sid,
+            )
+            return True
+
+        if Placement.objects.filter(
+            pk=placement.pk,
+            epoch=placement.epoch,
+            cluster=cluster.name,
+            sid="",
+        ).update(
+            sid=livekit_room.sid,
+            absent_since=None,
+            updated_at=timezone.now(),
+        ):
+            logger.info(
+                "Recorded LiveKit room %s started on LiveKit cluster %s with SID %s",
+                livekit_room.name,
+                cluster.name,
+                livekit_room.sid,
+            )
+            return True
+        return None
+
+    @classmethod
+    def _place_started(
+        cls,
+        cluster: LiveKitClusterConfig,
+        livekit_room: LiveKitRoom,
+        room: Room | None,
+    ) -> bool | None:
+        """Place a LiveKit room started on a cluster without placement.
+
+        It is placed there when the cluster may receive new placements, and the
+        placement is to be read again: return None. It is left alone when no
+        cluster may: return True. Otherwise, it is closed: return False.
+        """
+        candidates = cls.candidates()
+        if any(candidate.name == cluster.name for candidate in candidates):
+            logger.info(
+                "LiveKit room %s started on LiveKit cluster %s with SID %s without "
+                "placement: placing it there",
+                livekit_room.name,
+                cluster.name,
+                livekit_room.sid,
+            )
+            Placement.objects.bulk_create(
+                [
+                    Placement(
+                        room_name=livekit_room.name,
+                        room=room,
+                        cluster=cluster.name,
+                        sid=livekit_room.sid,
+                    )
+                ],
+                ignore_conflicts=True,
+            )
+            return None
+
+        if not candidates:
+            logger.warning(
+                "LiveKit room %s started on LiveKit cluster %s without placement, "
+                "while no LiveKit cluster may receive new placements: leaving it "
+                "alone",
+                livekit_room.name,
+                cluster.name,
+            )
+            return True
+
+        logger.warning(
+            "LiveKit room %s started without placement on LiveKit cluster %s, "
+            "which may not receive new placements: closing it",
+            livekit_room.name,
+            cluster.name,
+        )
+        cls._close_livekit_room(cluster, livekit_room.name, actor=None)
+        return False
+
+    @classmethod
+    def _close_started_elsewhere(
+        cls,
+        cluster: LiveKitClusterConfig,
+        livekit_room: LiveKitRoom,
+        registered: set[str],
+    ) -> bool | None:
+        """Close a LiveKit room started on a cluster other than its placement's.
+
+        The placement is read again right before closing it: the LiveKit room is
+        closed only while it is still placed on another registered cluster, and
+        False returned. Otherwise, return None for the placement to be read
+        again.
+        """
+        placement = Placement.objects.filter(room_name=livekit_room.name).first()
+        if (
+            placement is None
+            or placement.cluster == cluster.name
+            or placement.cluster not in registered
+        ):
+            return None
+
+        logger.warning(
+            "LiveKit room %s started on LiveKit cluster %s, but is placed on "
+            "LiveKit cluster %s: closing it",
+            livekit_room.name,
+            cluster.name,
+            placement.cluster,
+        )
+        cls._close_livekit_room(cluster, livekit_room.name, actor=None)
+        return False
 
     @classmethod
     def relocate(
