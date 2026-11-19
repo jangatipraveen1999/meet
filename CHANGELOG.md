@@ -14,6 +14,7 @@ and this project adheres to
 - ✨(frontend) add jittered exponential backoff to LiveKit reconnections
 - ✨(frontend) tell participants when a recording is interrupted
 - ✨(backend) record livekit rooms on the cluster that started them
+- ✨(backend) hand out the sid of livekit rooms with their credentials
 
 ### Changed
 
