@@ -34,6 +34,7 @@ and this project adheres to
 - 🚸(frontend) bring new speakers to the top of the carousel
 - 🚸(frontend) bring raised hands into view in the carousel
 - ⚡️(frontend) skip creating live livekit rooms when joining
+- 📝(docs) document lazy joins and livekit rooms followed across clusters
 
 ### Fixed
 

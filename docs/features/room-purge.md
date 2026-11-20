@@ -4,7 +4,7 @@ Rooms pile up over time and most of them are only used once. The `purge_inactive
 
 ## How it works
 
-Each time LiveKit tells the backend that a room has started (`room_started` webhook), the backend records the date on the room (`last_started_at`).
+Each time LiveKit tells the backend that a room has started (`room_started` webhook), the backend records the date on the room (`last_started_at`), unless it closes or ignores that LiveKit room, as one started on a LiveKit cluster the room is not placed on (see [Multi-cluster LiveKit](multi-cluster.md#recording-the-livekit-rooms-that-start)).
 A room is inactive when:
 
 - it was last started more than `ROOM_INACTIVITY_DELETION_DAYS` days ago, or

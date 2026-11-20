@@ -32,7 +32,9 @@ sequenceDiagram
     Backend->>Backend: Assign unique pin code to room
 
     Frontend->>Backend: POST /api/v1.0/rooms/{id}/join/
-    Backend->>LiveKit: CreateRoom
+    opt LiveKit room not known to be live
+        Backend->>LiveKit: CreateRoom
+    end
     Backend-->>Frontend: livekit url and token
 
     LiveKit-->>Backend: Webhook room_started
@@ -41,6 +43,8 @@ sequenceDiagram
     LiveKit-->>Backend: Webhook room_finished
     Backend->>Dispatch: Clear LiveKit SIP dispatch rule
 ```
+
+The backend creates the LiveKit room on every join of frontends of earlier releases, and of any frontend while `LIVEKIT_CONNECTION_RECOVERY_ENABLED` is off. Otherwise it creates it only when it does not know it to be live, see [Joining a room](multi-cluster.md#joining-a-room). The dispatch rule is created by the `room_started` of the LiveKit room the room is placed on, and cleared once that LiveKit room finishes.
 
 ### Participant calling
 

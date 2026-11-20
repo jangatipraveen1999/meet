@@ -45,6 +45,22 @@ parse as a UUID, yet to normalize to an existing room's id, matched no registere
 unregistered one. The token minted for that unregistered room was valid for the registered room: anyone could join a
 trusted or restricted room without being admitted through the lobby.
 
+### LiveKit rooms created by the backend only
+
+The backend now creates the LiveKit room of a meeting before handing out credentials for it, and LiveKit must no longer
+create rooms as participants join: every LiveKit cluster needs `room.auto_create: false`, see
+[Multi-cluster LiveKit](docs/features/multi-cluster.md#preparing-each-cluster). Earlier releases rely on that
+auto-creation, so turn it off only once every backend process runs this release:
+
+1. Deploy this release with `LIVEKIT_CONNECTION_RECOVERY_ENABLED=false`: frontends then have every join create the
+   LiveKit room, and do not reconnect on their own.
+2. Once every backend process runs this release, set `room.auto_create: false` on every LiveKit cluster.
+3. Set `LIVEKIT_CONNECTION_RECOVERY_ENABLED` back to `true`, its default.
+
+Otherwise, a frontend handed a LiveKit room that already closed connects anyway while auto-creation is on, and LiveKit
+creates it again under a SID the backend does not know: the room may then not be cleaned up when it finishes, and the
+participants of a meeting that ended may be reconnected to a new one.
+
 ## v1.37.0
 
 ### Crisp support chat replaced by the La Suite support form

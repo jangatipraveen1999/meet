@@ -15,7 +15,7 @@ We do not cover internal signaling behavior. For full reference, see the [LiveKi
 
 When the WebSocket drops, for instance after a LiveKit node crash or during a Redis outage, every client in every room loses it at the same time. To keep them from all reconnecting at once, each client waits a random delay before every attempt. The first delay is at most `LIVEKIT_RECONNECT_BASE_DELAY_MS`. That ceiling then doubles after each failed attempt, capped at `LIVEKIT_RECONNECT_MAX_DELAY_MS`, and each later delay falls between half the ceiling and the ceiling. The first attempt always starts within 5 seconds of the drop.
 
-A client gives up once its reconnection has lasted longer than `LIVEKIT_RECONNECT_GIVE_UP_AFTER_MS`, and then shows a "connection lost" page. While only signaling is down and its media still flows, it keeps trying instead. A client that loses the connection again less than `LIVEKIT_RECONNECT_BACKOFF_RESET_MS` after reconnecting resumes the backoff one step above where it stopped.
+A client gives up once its reconnection has lasted longer than `LIVEKIT_RECONNECT_GIVE_UP_AFTER_MS`. While only signaling is down and its media still flows, it keeps trying instead. Once it gave up, while `LIVEKIT_CONNECTION_RECOVERY_ENABLED` is on, it asks the backend where its room is and connects to the answer, which follows a room moved to another LiveKit cluster, see [Multi-cluster LiveKit](multi-cluster.md#when-a-livekit-room-fails). Otherwise, or when that fails, it shows a "connection lost" page. A client that loses the connection again less than `LIVEKIT_RECONNECT_BACKOFF_RESET_MS` after reconnecting resumes the backoff one step above where it stopped.
 
 ## Environment Variables
 

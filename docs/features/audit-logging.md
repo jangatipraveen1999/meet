@@ -320,7 +320,7 @@ given session.
 | `event.action` | Emitted when | Notable fields |
 |---|---|---|
 | `livekit.placement.relocate` | A room is relocated to another LiveKit cluster (see [Multi-cluster LiveKit](multi-cluster.md#relocating-a-room)). A refused relocation changes nothing and emits nothing | `entity.target` is the LiveKit room. `lasuite.actor.type` is `system` unless a user is named as the actor. `lasuite.details.source_cluster`, `target_cluster` and `relocation_id` |
-| `livekit.room.close` | The backend closes a LiveKit room on a cluster it is no longer placed on, after a relocation or for a stray LiveKit room, or fails to. Nothing is emitted when the LiveKit room is not live there | `service.target.name` is `livekit`, and `entity.target` is the LiveKit room. `lasuite.details.cluster` and `relocation_id`, which is the relocation's after a relocation |
+| `livekit.room.close` | The backend closes a LiveKit room on a cluster it is not placed on, or fails to: after a relocation, for a stray LiveKit room closed from the shell, or as a LiveKit room starts on such a cluster, including one without placement on a cluster that may not receive new placements. Nothing is emitted when the LiveKit room is not live there | `service.target.name` is `livekit`, and `entity.target` is the LiveKit room. `lasuite.actor.type` is `system` unless a user is named as the actor, and always for a LiveKit room closed as it starts. `lasuite.details.cluster`, and after a relocation only `relocation_id`, the relocation's |
 
 ### Sign-in and the admin
 
